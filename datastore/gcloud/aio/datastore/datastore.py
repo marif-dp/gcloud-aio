@@ -104,6 +104,7 @@ class Datastore:
         mutations: List[Dict[str, Any]],
         transaction: Optional[str] = None,
         mode: Mode = Mode.TRANSACTIONAL,
+        database_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         if not mutations:
             raise Exception('at least one mutation record is required')
@@ -120,6 +121,9 @@ class Datastore:
         }
         if transaction is not None:
             data['transaction'] = transaction
+        if database_id is not None:
+            data['databaseId'] = database_id
+        
         return data
 
     async def headers(self) -> Dict[str, str]:
@@ -211,18 +215,26 @@ class Datastore:
     ) -> Dict[str, Any]:
         project = await self.project()
         url = f'{self._api_root}/projects/{project}:commit'
+        print('commit url: ', url)
+        database_id = 'arif-test-db'
 
         body = self._make_commit_body(
             mutations, transaction=transaction,
             mode=mode,
+            database_id=database_id,
         )
         payload = json.dumps(body).encode('utf-8')
 
+        extra_header = f'project_id={project}&database_id=arif-test-db'
+        print('commit extra_header: ', extra_header)
+        
         headers = await self.headers()
         headers.update({
             'Content-Length': str(len(payload)),
             'Content-Type': 'application/json',
+            'x-goog-request-params': extra_header,
         })
+        
 
         s = AioSession(session) if session else self.session
         resp = await s.post(
@@ -304,12 +316,21 @@ class Datastore:
     ) -> LookUpResult:
         project = await self.project()
         url = f'{self._api_root}/projects/{project}:lookup'
+        print('lookup url: ', url)
 
         read_options = self._build_read_options(
             consistency, newTransaction, transaction)
+            
+        print('lookup read_options: ', read_options)
+        extra_header = f'project_id={project}&database_id=arif-test-db'
+        print('lookup extra_header: ', extra_header)
+        
+        keys_to_get = [k.to_repr() for k in keys]
+        print('lookup keys: ', keys_to_get)
 
         payload = json.dumps({
-            'keys': [k.to_repr() for k in keys],
+            'databaseId': 'arif-test-db',
+            'keys': keys_to_get,
             'readOptions': read_options,
         }).encode('utf-8')
 
@@ -317,6 +338,7 @@ class Datastore:
         headers.update({
             'Content-Length': str(len(payload)),
             'Content-Type': 'application/json',
+            'x-goog-request-params': extra_header,
         })
 
         s = AioSession(session) if session else self.session
@@ -326,6 +348,7 @@ class Datastore:
         )
 
         data: Dict[str, Any] = await resp.json()
+        print('lookup res: ', data)
 
         return self._build_lookup_result(data)
 
@@ -419,24 +442,30 @@ class Datastore:
     ) -> QueryResultBatch:
         project = await self.project()
         url = f'{self._api_root}/projects/{project}:runQuery'
-
+        print("runQuery url: ", url)
         if transaction:
             options = {'transaction': transaction}
         else:
             options = {'readConsistency': consistency.value}
         payload = json.dumps({
+            'databaseId': 'arif-test-db',
             'partitionId': {
                 'projectId': project,
                 'namespaceId': self.namespace,
+                'databaseId': 'arif-test-db',
             },
             query.json_key: query.to_repr(),
             'readOptions': options,
-        }).encode('utf-8')
+        })
+        print("----> runQuery payload: ", payload)
+        payload = payload.encode('utf-8')
 
+        extra_header = f'project_id={project}&database_id=arif-test-db'
         headers = await self.headers()
         headers.update({
             'Content-Length': str(len(payload)),
             'Content-Type': 'application/json',
+            'x-goog-request-params': extra_header,
         })
 
         s = AioSession(session) if session else self.session
