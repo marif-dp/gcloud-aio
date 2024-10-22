@@ -68,7 +68,7 @@ class Datastore:
     _api_is_dev: bool
 
     def __init__(
-            self, project: Optional[str] = None,
+            self, project: Optional[str] = None, database: Optional[str] = None,
             service_file: Optional[Union[str, IO[AnyStr]]] = None,
             namespace: str = '', session: Optional[Session] = None,
             token: Optional[Token] = None, api_root: Optional[str] = None,
@@ -88,6 +88,7 @@ class Datastore:
                 or os.environ.get('GOOGLE_CLOUD_PROJECT')
                 or 'dev'
             )
+        self._database = database
 
     async def project(self) -> str:
         if self._project:
@@ -98,6 +99,12 @@ class Datastore:
             return self._project
 
         raise Exception('could not determine project, please set it manually')
+
+    async def database(self) -> str:
+        return self._database
+
+    async def set_database(self, database: str) -> None:
+        self._database = database
 
     @staticmethod
     def _make_commit_body(
@@ -121,7 +128,7 @@ class Datastore:
         }
         if transaction is not None:
             data['transaction'] = transaction
-        if database_id is not None:
+        if database_id:
             data['databaseId'] = database_id
         
         return data
@@ -131,9 +138,15 @@ class Datastore:
             return {}
 
         token = await self.token.get()
-        return {
+        headers = {
             'Authorization': f'Bearer {token}',
         }
+        if self._database:
+            extra_header = f'project_id={self._projectproject}&database_id={self._database}'
+            headers.update({
+                'x-goog-request-params': extra_header,
+            })
+        return headers
 
     # TODO: support mutations w version specifiers, return new version (commit)
     @classmethod
@@ -215,24 +228,18 @@ class Datastore:
     ) -> Dict[str, Any]:
         project = await self.project()
         url = f'{self._api_root}/projects/{project}:commit'
-        print('commit url: ', url)
-        database_id = 'arif-test-db'
 
         body = self._make_commit_body(
             mutations, transaction=transaction,
             mode=mode,
-            database_id=database_id,
+            database_id=self._database,
         )
         payload = json.dumps(body).encode('utf-8')
-
-        extra_header = f'project_id={project}&database_id=arif-test-db'
-        print('commit extra_header: ', extra_header)
         
         headers = await self.headers()
         headers.update({
             'Content-Length': str(len(payload)),
             'Content-Type': 'application/json',
-            'x-goog-request-params': extra_header,
         })
         
 
@@ -320,25 +327,22 @@ class Datastore:
 
         read_options = self._build_read_options(
             consistency, newTransaction, transaction)
-            
-        print('lookup read_options: ', read_options)
-        extra_header = f'project_id={project}&database_id=arif-test-db'
-        print('lookup extra_header: ', extra_header)
         
         keys_to_get = [k.to_repr() for k in keys]
         print('lookup keys: ', keys_to_get)
 
-        payload = json.dumps({
-            'databaseId': 'arif-test-db',
+        payload_dict = {
             'keys': keys_to_get,
             'readOptions': read_options,
-        }).encode('utf-8')
+        }
+        if self._database:
+            payload_dict['databaseId'] = self._database
+        payload = json.dumps(payload_dict).encode('utf-8')
 
         headers = await self.headers()
         headers.update({
             'Content-Length': str(len(payload)),
             'Content-Type': 'application/json',
-            'x-goog-request-params': extra_header,
         })
 
         s = AioSession(session) if session else self.session
@@ -447,6 +451,7 @@ class Datastore:
             options = {'transaction': transaction}
         else:
             options = {'readConsistency': consistency.value}
+        parti
         payload = json.dumps({
             'databaseId': 'arif-test-db',
             'partitionId': {
