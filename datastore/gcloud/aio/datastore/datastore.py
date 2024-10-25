@@ -451,27 +451,34 @@ class Datastore:
             options = {'transaction': transaction}
         else:
             options = {'readConsistency': consistency.value}
-        parti
-        payload = json.dumps({
-            'databaseId': 'arif-test-db',
-            'partitionId': {
-                'projectId': project,
-                'namespaceId': self.namespace,
-                'databaseId': 'arif-test-db',
-            },
+        partion_id = {
+            'projectId': project,
+            'namespaceId': self.namespace,
+        }
+        if self._database:
+            partion_id['databaseId'] = self._database
+
+        payload_dict = {
+            'partitionId': partion_id,
             query.json_key: query.to_repr(),
             'readOptions': options,
-        })
+        }
+        if self._database:
+            payload_dict['databaseId'] = self._database
+        payload = json.dumps(payload_dict)
         print("----> runQuery payload: ", payload)
         payload = payload.encode('utf-8')
 
-        extra_header = f'project_id={project}&database_id=arif-test-db'
+        extra_header = f'project_id={project}&database_id={self._database}'
         headers = await self.headers()
         headers.update({
             'Content-Length': str(len(payload)),
             'Content-Type': 'application/json',
-            'x-goog-request-params': extra_header,
         })
+        if self._database:
+            headers.update({
+                'x-goog-request-params': extra_header,
+            })
 
         s = AioSession(session) if session else self.session
         resp = await s.post(
