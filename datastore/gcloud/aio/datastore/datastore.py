@@ -142,7 +142,7 @@ class Datastore:
             'Authorization': f'Bearer {token}',
         }
         if self._database:
-            extra_header = f'project_id={self._projectproject}&database_id={self._database}'
+            extra_header = f'project_id={self._project}&database_id={self._database}'
             headers.update({
                 'x-goog-request-params': extra_header,
             })
